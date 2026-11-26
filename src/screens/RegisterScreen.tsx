@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Text, TouchableOpacity, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Text, TouchableOpacity, View } from "react-native";
 import { Svg, Defs, RadialGradient, Stop, Rect, SvgXml } from "react-native-svg";
 import TextField from "../components/ui/TextField";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
@@ -46,8 +46,8 @@ export default function RegisterScreen({ onNavigateToLogin }: RegisterScreenProp
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [ccir, setCcir] = useState("");
-  const passwordInputRef = useRef<TextInput>(null);
-  const ccirInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<any>(null);
+  const ccirInputRef = useRef<any>(null);
 
   const handleRegister = () => {
     console.log("Cadastro realizado", { email, password, ccir });

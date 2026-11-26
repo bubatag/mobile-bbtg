@@ -1,5 +1,5 @@
 import { useRef, useState } from "react";
-import { KeyboardAvoidingView, Platform, Text, TouchableOpacity, TextInput, View } from "react-native";
+import { KeyboardAvoidingView, Platform, Text, TouchableOpacity, View } from "react-native";
 import { Svg, Defs, RadialGradient, Stop, Rect, SvgXml } from "react-native-svg";
 import TextField from "../components/ui/TextField";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
@@ -45,7 +45,7 @@ const backgroundBottomRight = `<?xml version="1.0" encoding="UTF-8"?>
 export default function LoginScreen({ onNavigateToRegister }: LoginScreenProps) {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const passwordInputRef = useRef<TextInput>(null);
+  const passwordInputRef = useRef<any>(null);
 
   const handleLogin = () => {
     // Aqui você pode adicionar a lógica de login ou mock de autenticação.

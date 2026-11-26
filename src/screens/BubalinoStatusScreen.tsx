@@ -1,4 +1,4 @@
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import {
   Alert,
   KeyboardAvoidingView,
@@ -19,14 +19,15 @@ import HelpButton from "../components/ui/HelpButton";
 import BubalinoFormFields, { validateForm } from "../components/ui/BubalinoFormFields";
 import { PrimaryButton } from "../components/ui/PrimaryButton";
 import type { Bubalino, BubalinoForm } from "../types";
+import { getErrorMessage } from "../services/api";
 
 export type BubalinoStatusData = Bubalino;
 
 interface BubalinoStatusScreenProps {
   bubalino: BubalinoStatusData;
   onBack: () => void;
-  onUpdate?: (bubalino: BubalinoStatusData) => void;
-  onDelete?: (id: string) => void;
+  onUpdate?: (bubalino: BubalinoStatusData) => Promise<void>;
+  onDelete?: (id: string) => Promise<void>;
 }
 
 const sairIcon = `<?xml version="1.0" encoding="UTF-8"?>
@@ -92,8 +93,6 @@ const thermometerIcon = `<?xml version="1.0" encoding="UTF-8"?>
 </defs>
 </svg>`;
 
-const pulseSeries = [44, 46, 43, 58, 42, 47, 48, 46, 47, 45, 47, 43, 55, 42, 45, 45, 56, 42, 47, 49, 46, 47, 46, 45, 46, 48, 45, 58, 43, 56, 43, 47, 46, 49, 48, 47, 50, 42, 47];
-
 function getPulseColor(pulse: number) {
   if (pulse < 45 || pulse > 90) return "#FF3939";
   if (pulse < 55 || pulse > 82) return "#F9AB00";
@@ -106,20 +105,24 @@ function getTemperatureColor(temperature: number) {
   return "#06D001";
 }
 
-function PulseChart({ color }: { color: string }) {
+const HISTORY_SIZE = 40;
+
+function PulseChart({ color, series }: { color: string; series: number[] }) {
   const path = useMemo(() => {
+    if (series.length < 2) return "";
     const width = 282;
     const height = 112;
     const min = 38;
     const max = 62;
-    return pulseSeries
+    return series
       .map((value, index) => {
-        const x = (index / (pulseSeries.length - 1)) * width;
-        const y = height - ((value - min) / (max - min)) * height;
+        const clamped = Math.min(max, Math.max(min, value));
+        const x = (index / (series.length - 1)) * width;
+        const y = height - ((clamped - min) / (max - min)) * height;
         return `${index === 0 ? "M" : "L"}${x.toFixed(1)} ${y.toFixed(1)}`;
       })
       .join(" ");
-  }, []);
+  }, [series]);
 
   return (
     <Svg width="100%" height={114} viewBox="0 0 282 114" preserveAspectRatio="none">
@@ -136,7 +139,7 @@ function PulseChart({ color }: { color: string }) {
       {Array.from({ length: 16 }).map((_, index) => (
         <Line key={`h-${index}`} x1={0} y1={index * 7.6} x2={282} y2={index * 7.6} stroke="#55707A" strokeWidth={0.45} opacity={0.65} />
       ))}
-      <Path d={path} stroke={color} strokeWidth={1.4} fill="none" opacity={0.58} />
+      {path ? <Path d={path} stroke={color} strokeWidth={1.4} fill="none" opacity={0.58} /> : null}
     </Svg>
   );
 }
@@ -154,46 +157,66 @@ function InfoBox({ label, value, italic = false }: { label: string; value: strin
   );
 }
 
+const toForm = (b: Bubalino): BubalinoForm => ({
+  name: b.name,
+  sex: b.sex,
+  birthDate: b.birthDate,
+  tag: b.tag,
+  collar: b.collar,
+});
+
 export default function BubalinoStatusScreen({ bubalino, onBack, onUpdate, onDelete }: BubalinoStatusScreenProps) {
-  const [info, setInfo] = useState(bubalino);
   const [isEditing, setIsEditing] = useState(false);
-  const toForm = (b: Bubalino): BubalinoForm => ({ name: b.name, sex: b.sex, birthDate: b.birthDate, tag: b.tag, collar: b.collar });
+  const [isSaving, setIsSaving] = useState(false);
   const [draft, setDraft] = useState<BubalinoForm>(toForm(bubalino));
-  const pulseColor = getPulseColor(info.pulse);
+  const [pulseHistory, setPulseHistory] = useState<number[]>([bubalino.pulse]);
+  const pulseColor = getPulseColor(bubalino.pulse);
+
+  // Guarda o histórico de pulso para o gráfico, conforme a App atualiza os dados
+  useEffect(() => {
+    setPulseHistory((h) =>
+      h[h.length - 1] === bubalino.pulse ? h : [...h, bubalino.pulse].slice(-HISTORY_SIZE)
+    );
+  }, [bubalino.pulse]);
 
   const openEditModal = () => {
-    setDraft(toForm(info));
+    setDraft(toForm(bubalino));
     setIsEditing(true);
   };
 
-  const saveEdit = () => {
+  const saveEdit = async () => {
     const error = validateForm(draft);
     if (error) {
       Alert.alert("Verifique os dados", error);
       return;
     }
-    const updated: Bubalino = { ...info, ...draft, sex: draft.sex as "Macho" | "Fêmea" };
-    setInfo(updated);
-    onUpdate?.(updated);
-    setIsEditing(false);
+    setIsSaving(true);
+    try {
+      await onUpdate?.({ ...bubalino, ...draft, sex: draft.sex as "Macho" | "Fêmea" });
+      setIsEditing(false);
+    } catch (e) {
+      Alert.alert("Erro", getErrorMessage(e));
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   const confirmDelete = () => {
-    Alert.alert(
-      "Excluir bubalino",
-      `Deseja excluir o cadastro do bubalino ${info.tag}?`,
-      [
-        { text: "Cancelar", style: "cancel" },
-        {
-          text: "Excluir",
-          style: "destructive",
-          onPress: () => {
-            onDelete?.(info.id);
+    Alert.alert("Excluir bubalino", `Deseja excluir o cadastro do bubalino ${bubalino.tag}?`, [
+      { text: "Cancelar", style: "cancel" },
+      {
+        text: "Excluir",
+        style: "destructive",
+        onPress: async () => {
+          try {
+            await onDelete?.(bubalino.id);
             onBack();
-          },
+          } catch (e) {
+            Alert.alert("Erro", getErrorMessage(e));
+          }
         },
-      ]
-    );
+      },
+    ]);
   };
 
   return (
@@ -221,7 +244,7 @@ export default function BubalinoStatusScreen({ bubalino, onBack, onUpdate, onDel
         </View>
 
         <Text className="font-title text-white text-[25px] uppercase" numberOfLines={1} adjustsFontSizeToFit>
-          STATUS DO BUBALINO {info.tag}
+          STATUS DO BUBALINO {bubalino.tag}
         </Text>
         <View className="h-[2px] bg-white mt-2 mb-5 -mx-5" />
 
@@ -238,33 +261,36 @@ export default function BubalinoStatusScreen({ bubalino, onBack, onUpdate, onDel
             <View className="mt-6">
               <BubalinoFormFields value={draft} onChange={setDraft} compact />
             </View>
-            <PrimaryButton title="ALTERAR" activeOpacity={0.85} onPress={saveEdit} />
+            <PrimaryButton
+              title={isSaving ? "SALVANDO..." : "ALTERAR"}
+              activeOpacity={0.85}
+              onPress={saveEdit}
+            />
           </View>
         ) : (
           <>
-        <View className="bg-[#2B3940] rounded-[28px] px-4 pt-4 pb-3 shadow-lg border border-[#2D3B42]">
-          <PulseChart color={pulseColor} />
-          <View className="mt-5 flex-row items-center">
-            <View className="flex-row items-end">
-              <View>
-                <Text className="font-body text-white text-sm text-center border-b border-white px-1 mb-0.5">PULSO</Text>
-                <Text className="font-body text-white text-5xl leading-[56px]">{info.pulse}</Text>
+            <View className="bg-[#2B3940] rounded-[28px] px-4 pt-4 pb-3 shadow-lg border border-[#2D3B42]">
+              <PulseChart color={pulseColor} series={pulseHistory} />
+              <View className="mt-5 flex-row items-center">
+                <View className="flex-row items-end">
+                  <View>
+                    <Text className="font-body text-white text-sm text-center border-b border-white px-1 mb-0.5">PULSO</Text>
+                    <Text className="font-body text-white text-5xl leading-[56px]">{bubalino.pulse}</Text>
+                  </View>
+                  <Text className="font-body text-white text-lg mb-2 ml-1">BPM</Text>
+                </View>
               </View>
-              <Text className="font-body text-white text-lg mb-2 ml-1">BPM</Text>
             </View>
-          </View>
-        </View>
 
-        <View className="mt-14 flex-row items-center">
-          <SvgXml xml={thermometerIcon} width={139} height={141} />
-          <View className="ml-4">
-            <Text className="font-body text-white text-xl border-b border-white pb-1">TEMPERATURA</Text>
-            <Text className="font-body text-white text-6xl mt-3">
-              {info.temperature.toFixed(1).replace(".", ",")}
-            </Text>
-          </View>
-        </View>
-
+            <View className="mt-14 flex-row items-center">
+              <SvgXml xml={thermometerIcon} width={139} height={141} />
+              <View className="ml-4">
+                <Text className="font-body text-white text-xl border-b border-white pb-1">TEMPERATURA</Text>
+                <Text className="font-body text-white text-6xl mt-3">
+                  {bubalino.temperature.toFixed(1).replace(".", ",")}
+                </Text>
+              </View>
+            </View>
           </>
         )}
 
@@ -274,22 +300,30 @@ export default function BubalinoStatusScreen({ bubalino, onBack, onUpdate, onDel
 
           <View className="flex-row">
             <View className="flex-1 pr-4">
-              <InfoBox label="Nome" value={info.name || "Sem nome registrado"} italic={!info.name} />
-              <InfoBox label="Número da etiqueta" value={info.tag} />
-              <InfoBox label="Data Nascimento" value={info.birthDate} />
+              <InfoBox label="Nome" value={bubalino.name || "Sem nome registrado"} italic={!bubalino.name} />
+              <InfoBox label="Número da etiqueta" value={bubalino.tag} />
+              <InfoBox label="Data Nascimento" value={bubalino.birthDate} />
             </View>
 
             <View className="w-[92px]">
-              <InfoBox label="Sexo" value={info.sex} />
-              <InfoBox label="Colar" value={info.collar} />
-              <InfoBox label="ID" value={info.id} />
+              <InfoBox label="Sexo" value={bubalino.sex} />
+              <InfoBox label="Colar" value={bubalino.collar} />
+              <InfoBox label="ID" value={bubalino.id} />
             </View>
 
             <View className="w-[64px] items-end pt-6">
-              <TouchableOpacity className="h-[48px] w-[48px] rounded-lg border-2 border-primary bg-[#1f2933] items-center justify-center shadow-sm" onPress={openEditModal} activeOpacity={0.8}>
+              <TouchableOpacity
+                className="h-[48px] w-[48px] rounded-lg border-2 border-primary bg-[#1f2933] items-center justify-center shadow-sm"
+                onPress={openEditModal}
+                activeOpacity={0.8}
+              >
                 <SvgXml xml={editIcon} width={31} height={31} />
               </TouchableOpacity>
-              <TouchableOpacity className="mt-9 h-[48px] w-[48px] rounded-lg bg-[#FF3939] items-center justify-center shadow-sm" onPress={confirmDelete} activeOpacity={0.82}>
+              <TouchableOpacity
+                className="mt-9 h-[48px] w-[48px] rounded-lg bg-[#FF3939] items-center justify-center shadow-sm"
+                onPress={confirmDelete}
+                activeOpacity={0.82}
+              >
                 <SvgXml xml={deleteIcon} width={34} height={34} />
               </TouchableOpacity>
               <View className="mt-9">
@@ -299,7 +333,6 @@ export default function BubalinoStatusScreen({ bubalino, onBack, onUpdate, onDel
           </View>
         </View>
       </ScrollView>
-
     </View>
     </Background>
   );

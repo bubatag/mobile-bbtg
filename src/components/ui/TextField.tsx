@@ -7,10 +7,12 @@ interface TextFieldProps extends TextInputProps {
 }
 
 const TextField = forwardRef<TextInput, TextFieldProps>(({ label, className = "", ...props }, ref) => {
+  const InputComponent = TextInput as any; // contorna o conflito de tipos entre versões do react-native
+
   return (
     <View className={`w-full mb-6 ${className}`}>
       <Text className="font-body text-white text-base mb-2">{label}</Text>
-      <TextInput
+      <InputComponent
         ref={ref}
         className="w-full bg-black/30 rounded-lg p-4 text-white font-body"
         placeholderTextColor="#9CA3AF"

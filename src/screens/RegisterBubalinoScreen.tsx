@@ -13,18 +13,31 @@ const sairIcon = `<?xml version="1.0" encoding="UTF-8"?>
 <path d="M19 4H14V2H19C20.1046 2 21 2.89543 21 4V20C21 21.1046 20.1046 22 19 22H14V20H19V4Z" fill="#06D001"/>
 </svg>`;
 
-
 interface Props {
   onBack: () => void;
-  onSave: (form: BubalinoForm) => string | null; // retorna mensagem de erro ou null
+  onSave: (form: BubalinoForm) => Promise<string | null>; // retorna mensagem de erro ou null
 }
 
 export default function RegisterBubalinoScreen({ onBack, onSave }: Props) {
   const [form, setForm] = useState<BubalinoForm>({ name: "", sex: "", birthDate: "", tag: "", collar: "" });
+  const [isSaving, setIsSaving] = useState(false);
 
-  const submit = () => {
-    const error = validateForm(form) ?? onSave(form);
-    if (error) Alert.alert("Verifique os dados", error);
+  const submit = async () => {
+    if (isSaving) return;
+
+    const localError = validateForm(form);
+    if (localError) {
+      Alert.alert("Verifique os dados", localError);
+      return;
+    }
+
+    setIsSaving(true);
+    try {
+      const error = await onSave(form);
+      if (error) Alert.alert("Verifique os dados", error);
+    } finally {
+      setIsSaving(false);
+    }
   };
 
   return (
@@ -43,7 +56,7 @@ export default function RegisterBubalinoScreen({ onBack, onSave }: Props) {
             <View className="h-[2px] bg-white/80 mt-3 mb-6 -mx-6" />
 
             <BubalinoFormFields value={form} onChange={setForm} />
-            <PrimaryButton title="CADASTRAR" activeOpacity={0.85} onPress={submit} />
+            <PrimaryButton title={isSaving ? "SALVANDO..." : "CADASTRAR"} activeOpacity={0.85} onPress={submit} />
           </ScrollView>
         </KeyboardAvoidingView>
         <HelpButton kind="newBuffalo" />
